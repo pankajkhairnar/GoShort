@@ -1,4 +1,4 @@
-package main
+package shortCode
 
 import (
 	"errors"
@@ -8,6 +8,7 @@ import (
 
 var seedChars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 var seedCharsLen = len(seedChars)
+var aChar byte = 97
 
 func main() {
 	var myStr = "a99"
@@ -16,9 +17,9 @@ func main() {
 	fmt.Println(">>", newString, err)
 }
 
-func getNextCode(code string) (string, error) {
+func GetNextCode(code string) (string, error) {
 	if code == "" {
-		return "a", nil
+		return string(aChar), nil
 	}
 	codeBytes := []byte(code)
 	codeByteLen := len(codeBytes)
@@ -29,14 +30,14 @@ func getNextCode(code string) (string, error) {
 		if codeCharIndex == -1 || codeCharIndex >= seedCharsLen {
 			return "", errors.New("Invalid code")
 		} else if codeCharIndex == (seedCharsLen - 1) {
-			codeBytes[i] = 97
+			codeBytes[i] = aChar
 		} else {
 			codeBytes[i] = seedChars[(codeCharIndex + 1)]
 			return string(codeBytes), nil
 		}
 	}
 	for _, byteVal := range codeBytes {
-		if byteVal != 97 {
+		if byteVal != aChar {
 			return string(codeBytes), nil
 		}
 	}
