@@ -141,7 +141,6 @@ func GetNextCode() (string, error) {
 		existingCodeByteKey := []byte("existingCodeKey")
 		existingCode := bucket.Get(existingCodeByteKey)
 		newCode, err = GenerateNextCode(string(existingCode))
-		fmt.Println("New Code :" + string(newCode))
 		err = bucket.Put(existingCodeByteKey, []byte(newCode))
 		if err != nil {
 			return err
@@ -156,7 +155,6 @@ func GetNextCode() (string, error) {
 }
 
 func GenerateNextCode(code string) (string, error) {
-	fmt.Println("Existing code :" + code)
 	if code == "" {
 		return string(aChar), nil
 	}
