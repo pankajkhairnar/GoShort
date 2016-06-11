@@ -1,31 +1,23 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
 	"log"
 	"net/http"
-	//"regexp"
+	"bytes"
+	"errors"
 	"github.com/boltdb/bolt"
 )
 
-var baseUrl = "http://localhost:8080/"
+var baseUrl = "http://localhost:8080/" // Replace this value with your server url
 var boltDBPath = "boltdb/shortURL.db"
 var shortUrlBkt = []byte("shortUrlBkt")
 var seedChars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 var seedCharsLen = len(seedChars)
 var aChar byte = 97
-
-func main() {
-	router := httprouter.New()
-	router.GET("/:code", Redirect)
-	router.GET("/:code/json", GetOriginalURL)
-	router.POST("/create/", Create)
-	log.Fatal(http.ListenAndServe(":8080", router))
-}
+var dbConn *bolt.DB
 
 type Response struct {
 	Status string `json:"status"`
@@ -33,25 +25,33 @@ type Response struct {
 	Url    string `json:"url"`
 }
 
+func main() {
+	var err error
+	dbConn, err = bolt.Open(boltDBPath, 0644, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//defer dbConn.Close()
+	router := httprouter.New()
+	router.GET("/:code", Redirect)
+	router.GET("/:code/json", GetOriginalURL)
+	router.POST("/create/", Create)
+	log.Fatal(http.ListenAndServe(":8080", router))
+}
+
 func Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	//@todo: add url validation
-	curCode := "aac"
 	urlStr := r.FormValue("url")
-	newCode, err := GetNextCode(curCode)
+	newCode, err := GetNextCode()
 	if err != nil {
 		resp := Response{Status: "ERROR", Msg: "Some error occured while creating short URL", Url: ""}
 		respJson, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(respJson))
 	}
 
-	db, err := bolt.Open(boltDBPath, 0644, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
 	byteKey, byteUrl := []byte(newCode), []byte(urlStr)
-
-	err = db.Update(func(tx *bolt.Tx) error {
+	err = dbConn.Update(func(tx *bolt.Tx) error {
 		//@todo : move this code to main function
 		bucket, err := tx.CreateBucketIfNotExists(shortUrlBkt)
 		if err != nil {
@@ -81,14 +81,9 @@ func Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
 func Redirect(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	code := ps.ByName("code")
-	db, err := bolt.Open(boltDBPath, 0644, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
 	key := []byte(code)
 	var originalUrl string
-	err = db.View(func(tx *bolt.Tx) error {
+	err := dbConn.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(shortUrlBkt)
 		if bucket == nil {
 			return fmt.Errorf("Bucket %q not found!", shortUrlBkt)
@@ -109,14 +104,10 @@ func Redirect(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 
 func GetOriginalURL(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	code := ps.ByName("code")
-	db, err := bolt.Open(boltDBPath, 0644, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+
 	key := []byte(code)
 	var originalUrl string
-	err = db.View(func(tx *bolt.Tx) error {
+	err := dbConn.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(shortUrlBkt)
 		if bucket == nil {
 			return fmt.Errorf("Bucket %q not found!", shortUrlBkt)
@@ -134,15 +125,38 @@ func GetOriginalURL(w http.ResponseWriter, r *http.Request, ps httprouter.Params
 		fmt.Fprint(w, string(respJson))
 	}
 
-
 	resp := &Response{Status: "SUCCESS", Msg: "", Url: originalUrl}
 	respJson, _ := json.Marshal(resp)
 	fmt.Fprint(w, string(respJson))
-
 }
 
-func GetNextCode(code string) (string, error) {
-	//@todo  : need to add locking for thread safe read operation
+func GetNextCode() (string, error) {
+	var newCode string
+	err := dbConn.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists(shortUrlBkt)
+		if err != nil {
+			return err
+		}
+
+		existingCodeByteKey := []byte("existingCodeKey")
+		existingCode := bucket.Get(existingCodeByteKey)
+		newCode, err = GenerateNextCode(string(existingCode))
+		fmt.Println("New Code :" + string(newCode))
+		err = bucket.Put(existingCodeByteKey, []byte(newCode))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+	return newCode, nil
+}
+
+func GenerateNextCode(code string) (string, error) {
+	fmt.Println("Existing code :" + code)
 	if code == "" {
 		return string(aChar), nil
 	}
