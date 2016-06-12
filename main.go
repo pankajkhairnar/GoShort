@@ -141,6 +141,8 @@ func getCodeURL(code string) (string, error) {
 func GetNextCode() (string, error) {
 	var newCode string
 	err := dbConn.Update(func(tx *bolt.Tx) error {
+		// by using locking on db file BoldDB makes sure it will be thread safe operation
+		// and no two goroutines can can get same a short code at a time
 		bucket, err := tx.CreateBucketIfNotExists(shortUrlBkt)
 		if err != nil {
 			return err
@@ -169,6 +171,9 @@ func GetNextCode() (string, error) {
 /*
 	Following method is used to generate alphanumeric incremental code, which will be helpful
 	for generating short urls
+	this function will return new code like, input > output
+	a > b, ax > ay, az > aA, aZ > a1, a9 > ba, 99 > aaa
+	it will create shortest alphanumeric code possible for using in url
 */
 func GenerateNextCode(code string) (string, error) {
 	if code == "" {
