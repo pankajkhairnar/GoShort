@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	valid "github.com/asaskevich/govalidator"
 	"github.com/boltdb/bolt"
 	"github.com/julienschmidt/httprouter"
 	"log"
 	"net/http"
+	"strings"
 )
 
 var baseUrl = "http://localhost:8080/" // Replace this url with your server goShort server url
@@ -41,8 +43,15 @@ func main() {
 }
 
 func Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	//@todo: add url validation
 	urlStr := r.FormValue("url")
+	urlStr = strings.Trim(urlStr, " ")
+	if valid.IsURL(urlStr) == false {
+		resp := &Response{Status: http.StatusBadRequest , Msg: "Invalid input URL", Url: ""}
+		respJson, _ := json.Marshal(resp)
+		fmt.Fprint(w, string(respJson))
+		return
+	}
+
 	newCode, err := GetNextCode()
 	if err != nil {
 		resp := Response{Status: http.StatusInternalServerError, Msg: "Some error occured while creating short URL", Url: ""}
