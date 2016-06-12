@@ -1,18 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/boltdb/bolt"
 	"github.com/julienschmidt/httprouter"
 	"log"
 	"net/http"
-	"bytes"
-	"errors"
-	"github.com/boltdb/bolt"
 )
 
-var baseUrl = "http://localhost:8080/" // Replace this value with your server url
-var boltDBPath = "boltdb/shortURL.db"
+var baseUrl = "http://localhost:8080/" // Replace this url with your server goShort server url
+var boltDBPath = "shortURL.db"
 var shortUrlBkt = []byte("shortUrlBkt")
 var seedChars = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 var seedCharsLen = len(seedChars)
@@ -20,7 +20,7 @@ var aChar byte = 97
 var dbConn *bolt.DB
 
 type Response struct {
-	Status string `json:"status"`
+	Status int    `json:"status"`
 	Msg    string `json:"msg"`
 	Url    string `json:"url"`
 }
@@ -29,7 +29,7 @@ func main() {
 	var err error
 	dbConn, err = bolt.Open(boltDBPath, 0644, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	//defer dbConn.Close()
@@ -45,7 +45,7 @@ func Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	urlStr := r.FormValue("url")
 	newCode, err := GetNextCode()
 	if err != nil {
-		resp := Response{Status: "ERROR", Msg: "Some error occured while creating short URL", Url: ""}
+		resp := Response{Status: http.StatusInternalServerError, Msg: "Some error occured while creating short URL", Url: ""}
 		respJson, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(respJson))
 	}
@@ -66,47 +66,61 @@ func Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	})
 
 	if err != nil {
-		log.Fatal(err)
-		resp := &Response{Status: "ERROR", Msg: "Some error occured while creating short URL:", Url: ""}
+		log.Println(err)
+		resp := &Response{Status: http.StatusInternalServerError, Msg: "Some error occured while creating short URL:", Url: ""}
 		respJson, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(respJson))
 		return
 	}
 
 	shortUrl := baseUrl + newCode
-	resp := &Response{Status: "SUCCESS", Msg: "", Url: shortUrl}
+	resp := &Response{Status: http.StatusOK, Msg: "Short URL created successfully", Url: shortUrl}
 	respJson, _ := json.Marshal(resp)
 	fmt.Fprint(w, string(respJson))
 }
 
 func Redirect(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	code := ps.ByName("code")
-	key := []byte(code)
-	var originalUrl string
-	err := dbConn.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(shortUrlBkt)
-		if bucket == nil {
-			return fmt.Errorf("Bucket %q not found!", shortUrlBkt)
-		}
-
-		value := bucket.Get(key)
-		originalUrl = string(value)
-		return nil
-	})
-
+	originalUrl, err := getCodeURL(code)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprint(w, err)
+		return
 	}
-
-	//http.Redirect(w, r, originalUrl, http.StatusFound)
-	fmt.Fprint(w, originalUrl)
+	http.Redirect(w, r, originalUrl, http.StatusFound)
 }
 
 func GetOriginalURL(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	code := ps.ByName("code")
+	originalUrl, err := getCodeURL(code)
 
+	if err != nil {
+		resp := &Response{Status: http.StatusInternalServerError, Msg: "Some error occured while reading URL", Url: ""}
+		respJson, _ := json.Marshal(resp)
+		fmt.Fprint(w, string(respJson))
+		return
+	}
+
+	var resp *Response
+	if len(originalUrl) != 0 {
+		resp = &Response{Status: http.StatusOK, Msg: "Found", Url: originalUrl}
+	} else {
+		resp = &Response{Status: http.StatusNotFound, Msg: "URL not found", Url: ""}
+	}
+
+	respJson, err := json.Marshal(resp)
+
+	if err != nil {
+		fmt.Fprint(w, "Error occurred while creating json response")
+		return
+	}
+
+	fmt.Fprint(w, string(respJson))
+}
+
+func getCodeURL(code string) (string, error) {
 	key := []byte(code)
 	var originalUrl string
+
 	err := dbConn.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(shortUrlBkt)
 		if bucket == nil {
@@ -119,15 +133,9 @@ func GetOriginalURL(w http.ResponseWriter, r *http.Request, ps httprouter.Params
 	})
 
 	if err != nil {
-		log.Fatal(err)
-		resp := &Response{Status: "ERROR", Msg: "Some error occured while reading URL:", Url: ""}
-		respJson, _ := json.Marshal(resp)
-		fmt.Fprint(w, string(respJson))
+		return "", err
 	}
-
-	resp := &Response{Status: "SUCCESS", Msg: "", Url: originalUrl}
-	respJson, _ := json.Marshal(resp)
-	fmt.Fprint(w, string(respJson))
+	return originalUrl, nil
 }
 
 func GetNextCode() (string, error) {
@@ -141,6 +149,10 @@ func GetNextCode() (string, error) {
 		existingCodeByteKey := []byte("existingCodeKey")
 		existingCode := bucket.Get(existingCodeByteKey)
 		newCode, err = GenerateNextCode(string(existingCode))
+		if err != nil {
+			return err
+		}
+
 		err = bucket.Put(existingCodeByteKey, []byte(newCode))
 		if err != nil {
 			return err
@@ -154,6 +166,10 @@ func GetNextCode() (string, error) {
 	return newCode, nil
 }
 
+/*
+	Following method is used to generate alphanumeric incremental code, which will be helpful
+	for generating short urls
+*/
 func GenerateNextCode(code string) (string, error) {
 	if code == "" {
 		return string(aChar), nil
@@ -165,7 +181,7 @@ func GenerateNextCode(code string) (string, error) {
 	for i := (codeByteLen - 1); i >= 0; i-- {
 		codeCharIndex = bytes.IndexByte(seedChars, codeBytes[i])
 		if codeCharIndex == -1 || codeCharIndex >= seedCharsLen {
-			return "", errors.New("Invalid code")
+			return "", errors.New("Invalid exisitng code")
 		} else if codeCharIndex == (seedCharsLen - 1) {
 			codeBytes[i] = aChar
 		} else {
@@ -178,5 +194,6 @@ func GenerateNextCode(code string) (string, error) {
 			return string(codeBytes), nil
 		}
 	}
+	// prepending "a" for generating new incremental code
 	return "a" + string(codeBytes), nil
 }

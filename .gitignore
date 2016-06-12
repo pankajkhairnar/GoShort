@@ -27,3 +27,4 @@ src/golang.org/
 temp.go
 shortCode.go
 boltdb/
+shortURL.db
