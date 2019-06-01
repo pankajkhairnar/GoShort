@@ -3,8 +3,8 @@ GoShort is a URL shortener written in Golang and [BoltDB] for persistent key/val
 
 ### REST Endpoints
   - [POST] - http://localhost:8080/create/ : It accepts POST form data with parameter "url" and returns json response with short URL
-  - [GET] - http://localhost:8080/{SHORT_CODE}/ : If SHORT_CODE is valid and found in db request will be redirected to original URL
-  - [GET] - http://localhost:8080/{SHORT_CODE}/json : If SHORT_CODE is valid and found in db it will return original url in json response  
+  - [GET] - http://localhost:8080/{SHORT_CODE}/ : If SHORT_CODE is valid and found in db, request will be redirected to original long URL
+  - [GET] - http://localhost:8080/{SHORT_CODE}/json : If SHORT_CODE is valid and found in db the endpoint will return original url in json response  
 
 ### License
 [Apache]
