@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	valid "github.com/asaskevich/govalidator"
-	"github.com/boltdb/bolt"
-	"github.com/julienschmidt/httprouter"
 	"log"
 	"net/http"
 	"strings"
+
+	valid "github.com/asaskevich/govalidator"
+	"github.com/boltdb/bolt"
+	"github.com/julienschmidt/httprouter"
 )
 
 var baseUrl = "http://localhost:8080/" // Replace this url with your server goShort server url
@@ -39,14 +40,16 @@ func main() {
 	router.GET("/:code", Redirect)
 	router.GET("/:code/json", GetOriginalURL)
 	router.POST("/create/", Create)
+	fmt.Println("Server started on :8080 port")
 	log.Fatal(http.ListenAndServe(":8080", router))
+
 }
 
 func Create(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 	urlStr := r.FormValue("url")
 	urlStr = strings.Trim(urlStr, " ")
 	if valid.IsURL(urlStr) == false {
-		resp := &Response{Status: http.StatusBadRequest , Msg: "Invalid input URL", Url: ""}
+		resp := &Response{Status: http.StatusBadRequest, Msg: "Invalid input URL", Url: ""}
 		respJson, _ := json.Marshal(resp)
 		fmt.Fprint(w, string(respJson))
 		return
